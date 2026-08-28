@@ -28,7 +28,14 @@ Copy the content from [README.md](file:///C:/Users/USER/.gemini/antigravity/brai
 
 ---
 
-### Field 5: How to Test (Reviewer Instructions)
+### Field 5: GitHub Repository URL
+```
+https://github.com/Abdulmuiz01/slashguard
+```
+
+---
+
+### Field 6: How to Test (Reviewer Instructions)
 ```markdown
 1. Open GenLayer Studio (https://studio.genlayer.com).
 2. Paste `contract.py` and click Deploy.
