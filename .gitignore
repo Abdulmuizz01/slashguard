@@ -1,0 +1,6 @@
+# System & metadata files
+.system_generated/
+.user_uploaded/
+*.metadata.json
+__pycache__/
+*.pyc
