@@ -10,14 +10,12 @@ class SlashGuard(gl.Contract):
     using multi-source web evidence and decentralized AI validator consensus under
     Optimistic Democracy.
     """
-    policies: dict
-    approved_payouts: dict
-    total_underwritten: int
+    policies: TreeMap[str, str]
+    approved_payouts: TreeMap[str, u256]
+    total_underwritten: u256
 
     def __init__(self):
-        self.policies = {}
-        self.approved_payouts = {}
-        self.total_underwritten = 0
+        self.total_underwritten = u256(0)
 
     @gl.public.write
     def create_policy(self, policy_id: str, target_vault: str, min_loss_usd: int, coverage_amount: int) -> None:
@@ -29,9 +27,9 @@ class SlashGuard(gl.Contract):
         if coverage_amount <= 0 or min_loss_usd <= 0:
             raise Exception("Coverage amount and min loss threshold must be positive.")
 
-        caller = str(gl.message.sender_account)
+        caller = str(gl.message.sender)
 
-        self.policies[policy_id] = {
+        policy_data = {
             "policyholder": caller,
             "vault_protocol": target_vault,
             "min_loss_usd": min_loss_usd,
@@ -39,7 +37,10 @@ class SlashGuard(gl.Contract):
             "is_active": True,
             "claim_status": "NONE"  # NONE | CONFIRMED | REJECTED
         }
-        self.total_underwritten += coverage_amount
+        
+        self.policies[policy_id] = json.dumps(policy_data)
+        current_total = int(self.total_underwritten)
+        self.total_underwritten = u256(current_total + coverage_amount)
 
     @gl.public.write
     def submit_claim(self, policy_id: str, evidence_url_1: str, evidence_url_2: str) -> str:
@@ -47,10 +48,12 @@ class SlashGuard(gl.Contract):
         Submits two independent web evidence sources for exploit adjudication.
         Triggers GenLayer non-deterministic web fetching and LLM forensic consensus.
         """
-        policy = self.policies.get(policy_id)
-        if not policy:
+        raw_policy = self.policies.get(policy_id, "")
+        if not raw_policy:
             raise Exception("Policy does not exist.")
-        if not policy["is_active"]:
+        
+        policy = json.loads(raw_policy)
+        if not policy.get("is_active", False):
             raise Exception("Policy is no longer active or already settled.")
         
         # Corroboration Guard: Evidence must come from two distinct URLs
@@ -61,10 +64,10 @@ class SlashGuard(gl.Contract):
             raise Exception("Invalid evidence URL format.")
 
         # Capture state into local variables before nondet isolation
-        target_protocol = policy["vault_protocol"]
-        loss_threshold = policy["min_loss_usd"]
-        url_1 = evidence_url_1
-        url_2 = evidence_url_2
+        target_protocol = str(policy["vault_protocol"])
+        loss_threshold = int(policy["min_loss_usd"])
+        url_1 = str(evidence_url_1)
+        url_2 = str(evidence_url_2)
 
         # Non-deterministic evaluation block (isolated from contract state)
         def evaluate_exploit() -> str:
@@ -117,20 +120,20 @@ class SlashGuard(gl.Contract):
 
         # State transition based on consensus outcome
         if consensus_verdict == "CONFIRMED":
-            policyholder = policy["policyholder"]
-            payout = policy["coverage_amount"]
+            policyholder = str(policy["policyholder"])
+            payout = int(policy["coverage_amount"])
             
             # Pull-over-Push accounting ledger update
-            current_approved = self.approved_payouts.get(policyholder, 0)
-            self.approved_payouts[policyholder] = current_approved + payout
+            current_approved = int(self.approved_payouts.get(policyholder, u256(0)))
+            self.approved_payouts[policyholder] = u256(current_approved + payout)
             
             policy["is_active"] = False
             policy["claim_status"] = "CONFIRMED"
-            self.policies[policy_id] = policy
+            self.policies[policy_id] = json.dumps(policy)
             return "CLAIM_CONFIRMED_AND_ESCROWED"
         else:
             policy["claim_status"] = "REJECTED"
-            self.policies[policy_id] = policy
+            self.policies[policy_id] = json.dumps(policy)
             return "CLAIM_REJECTED"
 
     @gl.public.write
@@ -138,25 +141,25 @@ class SlashGuard(gl.Contract):
         """
         Pull-Over-Push pattern: Allows policyholders to safely withdraw approved claim balances.
         """
-        caller = str(gl.message.sender_account)
-        amount = self.approved_payouts.get(caller, 0)
+        caller = str(gl.message.sender)
+        current_amount = int(self.approved_payouts.get(caller, u256(0)))
         
-        if amount <= 0:
+        if current_amount <= 0:
             raise Exception("No approved payouts available for withdrawal.")
         
         # Zero out balance to prevent reentrancy and double withdrawal
-        self.approved_payouts[caller] = 0
-        return amount
+        self.approved_payouts[caller] = u256(0)
+        return current_amount
 
     @gl.public.view
-    def get_policy(self, policy_id: str) -> dict:
-        """View details of a specific policy."""
-        policy = self.policies.get(policy_id)
-        if not policy:
+    def get_policy(self, policy_id: str) -> str:
+        """View details of a specific policy as a JSON string."""
+        raw_policy = self.policies.get(policy_id, "")
+        if not raw_policy:
             raise Exception("Policy not found.")
-        return policy
+        return raw_policy
 
     @gl.public.view
     def check_approved_payout(self, user: str) -> int:
         """View the approved payout balance ready for withdrawal for a user."""
-        return self.approved_payouts.get(user, 0)
+        return int(self.approved_payouts.get(user, u256(0)))
