@@ -15,8 +15,6 @@ class SlashGuard(gl.Contract):
 
     def __init__(self, initial_pool_name: str):
         self.pool_name = initial_pool_name
-        self.policies = TreeMap()
-        self.approved_payouts = TreeMap()
         self.total_underwritten = u256(0)
 
     @gl.public.write
