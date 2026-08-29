@@ -1,8 +1,8 @@
 # SlashGuard: Web-Grounded Parametric Exploit Escrow
 
 **Submission Track:** Builder — Intelligent Contracts  
-**Author:** `Abdulmuiz01` (`~<Abdulmuizz/>`)  
-**Repository:** https://github.com/Abdulmuiz01/slashguard  
+**Author:** `Abdulmuizz01` (`~<Abdulmuizz/>`)  
+**Repository:** https://github.com/Abdulmuizz01/slashguard  
 
 ---
 

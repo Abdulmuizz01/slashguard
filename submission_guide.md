@@ -30,7 +30,7 @@ Copy the content from [README.md](file:///C:/Users/USER/.gemini/antigravity/brai
 
 ### Field 5: GitHub Repository URL
 ```
-https://github.com/Abdulmuiz01/slashguard
+https://github.com/Abdulmuizz01/slashguard
 ```
 
 ---
