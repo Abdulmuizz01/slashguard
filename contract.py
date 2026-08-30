@@ -3,6 +3,19 @@
 
 from genlayer import *
 import json
+from urllib.parse import urlparse
+
+# A hardcoded set of trusted, authoritative security domains
+TRUSTED_DOMAINS = {
+    "rekt.news",
+    "etherscan.io",
+    "peckshield.com",
+    "certik.com",
+    "halborn.com",
+    "blocksec.com",
+    "x.com",
+    "twitter.com"
+}
 
 class SlashGuard(gl.Contract):
     """
@@ -17,14 +30,19 @@ class SlashGuard(gl.Contract):
         self.pool_name = initial_pool_name
         self.total_underwritten = u256(0)
 
-    @gl.public.write
+    @gl.public.write.payable
     def create_policy(self, policy_id: str, target_vault: str, min_loss_usd: int, coverage_amount: int) -> None:
         if policy_id in self.policies:
-            raise Exception("Policy ID already exists.")
+            raise gl.vm.UserError("Policy ID already exists.")
         if coverage_amount <= 0 or min_loss_usd <= 0:
-            raise Exception("Coverage amount and min loss threshold must be positive.")
+            raise gl.vm.UserError("Coverage amount and min loss threshold must be positive.")
+        
+        # Enforce funded coverage / pool capacity:
+        # The underwriter must deposit the full coverage amount to back the policy
+        if gl.message.value < u256(coverage_amount):
+            raise gl.vm.UserError("Insufficient funds provided to back the policy coverage.")
 
-        caller = str(gl.message.sender)
+        caller = gl.message.sender_address.as_hex
 
         policy_data = {
             "policyholder": caller,
@@ -43,19 +61,30 @@ class SlashGuard(gl.Contract):
     def submit_claim(self, policy_id: str, evidence_url_1: str, evidence_url_2: str) -> str:
         raw_policy = self.policies.get(policy_id, "")
         if not raw_policy:
-            raise Exception("Policy does not exist.")
+            raise gl.vm.UserError("Policy does not exist.")
         
         policy = json.loads(raw_policy)
         if not policy.get("is_active", False):
-            raise Exception("Policy is no longer active or already settled.")
+            raise gl.vm.UserError("Policy is no longer active or already settled.")
         
-        if evidence_url_1.strip() == evidence_url_2.strip():
-            raise Exception("Evidence sources must be two distinct URLs.")
+        url_1 = evidence_url_1.strip()
+        url_2 = evidence_url_2.strip()
+        
+        if url_1 == url_2:
+            raise gl.vm.UserError("Evidence sources must be two distinct URLs.")
+
+        # Architectural Upgrade 3: Verify genuinely independent and authoritative sources
+        domain1 = urlparse(url_1).netloc.lower().replace("www.", "")
+        domain2 = urlparse(url_2).netloc.lower().replace("www.", "")
+
+        if domain1 == domain2:
+            raise gl.vm.UserError("Evidence must come from independent domains.")
+        
+        if domain1 not in TRUSTED_DOMAINS or domain2 not in TRUSTED_DOMAINS:
+            raise gl.vm.UserError(f"Evidence URLs must be from authoritative trusted domains (e.g., {', '.join(list(TRUSTED_DOMAINS)[:3])})")
 
         target_protocol = str(policy["vault_protocol"])
         loss_threshold = int(policy["min_loss_usd"])
-        url_1 = str(evidence_url_1)
-        url_2 = str(evidence_url_2)
 
         def evaluate_exploit() -> str:
             raw_report_1 = gl.nondet.web.render(url_1, mode='html')
@@ -65,11 +94,11 @@ class SlashGuard(gl.Contract):
             clean_report_2 = str(raw_report_2)[:4000]
 
             prompt = f"""
-            Analyze these two exploit reports for {target_protocol}.
+            Analyze these two authoritative exploit reports for {target_protocol}.
             Threshold: ${loss_threshold:,} USD.
 
-            Source 1: {clean_report_1}
-            Source 2: {clean_report_2}
+            Source 1 ({domain1}): {clean_report_1}
+            Source 2 ({domain2}): {clean_report_2}
 
             Did a severe exploit occur on {target_protocol} exceeding the loss threshold?
             Return strictly a JSON object: {{"status": "CONFIRMED"}} or {{"status": "REJECTED"}}.
@@ -106,12 +135,24 @@ class SlashGuard(gl.Contract):
 
     @gl.public.write
     def withdraw_payout(self) -> int:
-        caller = str(gl.message.sender)
-        current_amount = int(self.approved_payouts.get(caller, u256(0)))
-        if current_amount <= 0:
-            raise Exception("No approved payouts available.")
-        self.approved_payouts[caller] = u256(0)
-        return current_amount
+        # Architectural Upgrade 2: Settles real escrowed value natively
+        caller = gl.message.sender_address
+        caller_hex = caller.as_hex
+        
+        current_amount = self.approved_payouts.get(caller_hex, u256(0))
+        if current_amount <= u256(0):
+            raise gl.vm.UserError("No approved payouts available.")
+            
+        if current_amount > self.balance:
+            raise gl.vm.UserError("Insufficient contract balance to cover payout.")
+
+        # Clear the approved balance before transferring (prevent re-entrancy)
+        self.approved_payouts[caller_hex] = u256(0)
+        
+        # Settle the payout by transferring GenLayer native tokens
+        gl.get_contract_at(caller).emit_transfer(value=current_amount, on="finalized")
+        
+        return int(current_amount)
 
     @gl.public.view
     def get_pool_name(self) -> str:
