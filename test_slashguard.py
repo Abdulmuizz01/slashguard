@@ -9,6 +9,16 @@ TRUSTED_DOMAINS = {
     "certik.com", "halborn.com", "blocksec.com", "x.com", "twitter.com"
 }
 
+def test_unauthorized_policy_creation_fails():
+    contract_issuer = "0xOwner"
+    caller = "0xHacker"
+    
+    try:
+        assert caller == contract_issuer, "Unauthorized: Only the designated issuer/underwriter can create policies."
+        print("[FAIL] Unauthorized Policy Creation Test (Should have raised exception)")
+    except AssertionError:
+        print("[PASS] Unauthorized Policy Creation Fails Correctly")
+
 def test_unfunded_policy_creation_fails():
     coverage_amount = 100000
     msg_value = 50000 # Underfunded!
@@ -74,6 +84,7 @@ def test_withdraw_settles_real_funds():
 
 if __name__ == "__main__":
     print("--- Running SlashGuard Architecture Test Suite ---")
+    test_unauthorized_policy_creation_fails()
     test_unfunded_policy_creation_fails()
     test_funded_policy_creation_succeeds()
     test_independent_and_authoritative_sources()

@@ -25,13 +25,17 @@ class SlashGuard(gl.Contract):
     policies: TreeMap[str, str]
     approved_payouts: TreeMap[str, u256]
     total_underwritten: u256
+    issuer: str
 
     def __init__(self, initial_pool_name: str):
         self.pool_name = initial_pool_name
         self.total_underwritten = u256(0)
+        self.issuer = gl.message.sender_address.as_hex
 
     @gl.public.write.payable
     def create_policy(self, policy_id: str, target_vault: str, min_loss_usd: int, coverage_amount: int) -> None:
+        if gl.message.sender_address.as_hex != self.issuer:
+            raise gl.vm.UserError("Unauthorized: Only the designated issuer/underwriter can create policies.")
         if policy_id in self.policies:
             raise gl.vm.UserError("Policy ID already exists.")
         if coverage_amount <= 0 or min_loss_usd <= 0:
