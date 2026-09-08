@@ -33,7 +33,7 @@ class SlashGuard(gl.Contract):
         self.issuer = gl.message.sender_address.as_hex
 
     @gl.public.write.payable
-    def create_policy(self, policy_id: str, target_vault: str, min_loss_usd: int, coverage_amount: int) -> None:
+    def create_policy(self, policy_id: str, beneficiary: str, target_vault: str, min_loss_usd: int, coverage_amount: int) -> None:
         if gl.message.sender_address.as_hex != self.issuer:
             raise gl.vm.UserError("Unauthorized: Only the designated issuer/underwriter can create policies.")
         if policy_id in self.policies:
@@ -46,10 +46,8 @@ class SlashGuard(gl.Contract):
         if gl.message.value < u256(coverage_amount):
             raise gl.vm.UserError("Insufficient funds provided to back the policy coverage.")
 
-        caller = gl.message.sender_address.as_hex
-
         policy_data = {
-            "policyholder": caller,
+            "policyholder": beneficiary,
             "vault_protocol": target_vault,
             "min_loss_usd": min_loss_usd,
             "coverage_amount": coverage_amount,
@@ -99,7 +97,7 @@ class SlashGuard(gl.Contract):
 
             prompt = f"""
             Analyze these two authoritative exploit reports for {target_protocol}.
-            Threshold: ${loss_threshold:,} USD.
+            Threshold:  USD.
 
             Source 1 ({domain1}): {clean_report_1}
             Source 2 ({domain2}): {clean_report_2}
@@ -110,7 +108,7 @@ class SlashGuard(gl.Contract):
 
             raw_output = gl.nondet.exec_prompt(prompt).strip()
             try:
-                cleaned = raw_output.replace("```json", "").replace("```", "").strip()
+                cleaned = raw_output.replace("`json", "").replace("`", "").strip()
                 data = json.loads(cleaned)
                 verdict = data.get("status", "REJECTED").upper()
                 if verdict in ["CONFIRMED", "REJECTED"]:
@@ -157,6 +155,35 @@ class SlashGuard(gl.Contract):
         gl.get_contract_at(caller).emit_transfer(value=current_amount, on="finalized")
         
         return int(current_amount)
+        
+    @gl.public.write
+    def cancel_policy(self, policy_id: str) -> int:
+        if gl.message.sender_address.as_hex != self.issuer:
+            raise gl.vm.UserError("Unauthorized: Only the designated issuer/underwriter can cancel policies.")
+        
+        raw_policy = self.policies.get(policy_id, "")
+        if not raw_policy:
+            raise gl.vm.UserError("Policy does not exist.")
+        
+        policy = json.loads(raw_policy)
+        if not policy.get("is_active", False):
+            raise gl.vm.UserError("Policy is no longer active.")
+            
+        if policy.get("claim_status") != "NONE":
+            raise gl.vm.UserError("Cannot cancel a policy that has a claim processing or processed.")
+        
+        coverage_amount = int(policy["coverage_amount"])
+        
+        policy["is_active"] = False
+        policy["claim_status"] = "CANCELLED"
+        self.policies[policy_id] = json.dumps(policy)
+        
+        current_total = int(self.total_underwritten)
+        self.total_underwritten = u256(current_total - coverage_amount)
+        
+        gl.get_contract_at(gl.message.sender_address).emit_transfer(value=u256(coverage_amount), on="finalized")
+        
+        return coverage_amount
 
     @gl.public.view
     def get_pool_name(self) -> str:
