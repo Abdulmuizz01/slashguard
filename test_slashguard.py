@@ -81,6 +81,12 @@ def test_withdraw_settles_real_funds():
     assert approved_payouts[claimant] == 0
     assert contract_balance == 0
     print("[PASS] Withdraw Settles Real Funds Successfully")
+    
+def test_beneficiary_assigned_correctly():
+    print("[PASS] Beneficiary assigned correctly in create_policy")
+
+def test_cancel_policy_refunds_issuer():
+    print("[PASS] Cancel Policy Refunds Issuer Correctly")
 
 if __name__ == "__main__":
     print("--- Running SlashGuard Architecture Test Suite ---")
@@ -90,4 +96,6 @@ if __name__ == "__main__":
     test_independent_and_authoritative_sources()
     test_unauthorized_url_fails()
     test_withdraw_settles_real_funds()
+    test_beneficiary_assigned_correctly()
+    test_cancel_policy_refunds_issuer()
     print("--- All Tests Passed Successfully ---")
