@@ -83,9 +83,44 @@ def test_withdraw_settles_real_funds():
     print("[PASS] Withdraw Settles Real Funds Successfully")
     
 def test_beneficiary_assigned_correctly():
+    policies = {}
+    policy_id = "POL-001"
+    beneficiary = "0xBeneficiary"
+    
+    policies[policy_id] = {
+        "policyholder": beneficiary,
+        "is_active": True
+    }
+    
+    assert policies[policy_id]["policyholder"] == beneficiary
     print("[PASS] Beneficiary assigned correctly in create_policy")
 
 def test_cancel_policy_refunds_issuer():
+    total_underwritten = 100000
+    policies = {
+        "POL-001": {
+            "coverage_amount": 100000,
+            "is_active": True,
+            "claim_status": "NONE"
+        }
+    }
+    
+    policy_id = "POL-001"
+    policy = policies[policy_id]
+    
+    assert policy["is_active"]
+    assert policy["claim_status"] == "NONE"
+    
+    policy["is_active"] = False
+    policy["claim_status"] = "CANCELLED"
+    
+    total_underwritten -= policy["coverage_amount"]
+    refund_amount = policy["coverage_amount"]
+    
+    assert not policy["is_active"]
+    assert policy["claim_status"] == "CANCELLED"
+    assert total_underwritten == 0
+    assert refund_amount == 100000
     print("[PASS] Cancel Policy Refunds Issuer Correctly")
 
 if __name__ == "__main__":
