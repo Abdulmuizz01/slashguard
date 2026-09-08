@@ -97,7 +97,7 @@ class SlashGuard(gl.Contract):
 
             prompt = f"""
             Analyze these two authoritative exploit reports for {target_protocol}.
-            Threshold:  USD.
+            Threshold: {loss_threshold} USD.
 
             Source 1 ({domain1}): {clean_report_1}
             Source 2 ({domain2}): {clean_report_2}
@@ -108,7 +108,7 @@ class SlashGuard(gl.Contract):
 
             raw_output = gl.nondet.exec_prompt(prompt).strip()
             try:
-                cleaned = raw_output.replace("`json", "").replace("`", "").strip()
+                cleaned = raw_output.replace("```json", "").replace("```", "").strip()
                 data = json.loads(cleaned)
                 verdict = data.get("status", "REJECTED").upper()
                 if verdict in ["CONFIRMED", "REJECTED"]:
