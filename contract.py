@@ -3,6 +3,7 @@
 
 from genlayer import *
 import json
+import re
 from urllib.parse import urlparse
 
 # A hardcoded set of trusted, authoritative security domains
@@ -16,6 +17,12 @@ TRUSTED_DOMAINS = {
     "x.com",
     "twitter.com"
 }
+
+# Maximum number of claim attempts per policy before it auto-locks
+MAX_CLAIM_ATTEMPTS = 3
+
+# Allowed characters for target_vault to prevent prompt injection
+VAULT_NAME_PATTERN = re.compile(r'^[A-Za-z0-9 \-\.]+$')
 
 class SlashGuard(gl.Contract):
     """
@@ -40,21 +47,30 @@ class SlashGuard(gl.Contract):
             raise gl.vm.UserError("Policy ID already exists.")
         if coverage_amount <= 0 or min_loss_usd <= 0:
             raise gl.vm.UserError("Coverage amount and min loss threshold must be positive.")
-        
-        # Enforce funded coverage / pool capacity:
-        # The underwriter must deposit the full coverage amount to back the policy
-        if gl.message.value < u256(coverage_amount):
-            raise gl.vm.UserError("Insufficient funds provided to back the policy coverage.")
+
+        # FIX 1: Strict equality prevents overpayment lock
+        if gl.message.value != u256(coverage_amount):
+            raise gl.vm.UserError("Deposit must exactly match the coverage amount.")
+
+        # FIX 2: Sanitize target_vault to prevent prompt injection
+        if not target_vault or len(target_vault) > 32 or not VAULT_NAME_PATTERN.match(target_vault):
+            raise gl.vm.UserError("Invalid vault name. Use only alphanumeric characters, spaces, hyphens, and dots (max 32 chars).")
+
+        # FIX 3: Normalize beneficiary address to lowercase for consistent lookups
+        normalized_beneficiary = beneficiary.strip().lower()
+        if not normalized_beneficiary:
+            raise gl.vm.UserError("Beneficiary address cannot be empty.")
 
         policy_data = {
-            "policyholder": beneficiary,
+            "policyholder": normalized_beneficiary,
             "vault_protocol": target_vault,
             "min_loss_usd": min_loss_usd,
             "coverage_amount": coverage_amount,
             "is_active": True,
-            "claim_status": "NONE"
+            "claim_status": "NONE",
+            "claim_attempts": 0
         }
-        
+
         self.policies[policy_id] = json.dumps(policy_data)
         current_total = int(self.total_underwritten)
         self.total_underwritten = u256(current_total + coverage_amount)
@@ -64,24 +80,29 @@ class SlashGuard(gl.Contract):
         raw_policy = self.policies.get(policy_id, "")
         if not raw_policy:
             raise gl.vm.UserError("Policy does not exist.")
-        
+
         policy = json.loads(raw_policy)
         if not policy.get("is_active", False):
             raise gl.vm.UserError("Policy is no longer active or already settled.")
-        
+
+        # FIX 4: Enforce maximum claim attempts to prevent infinite replay attacks
+        attempts = int(policy.get("claim_attempts", 0))
+        if attempts >= MAX_CLAIM_ATTEMPTS:
+            raise gl.vm.UserError("Maximum claim attempts exceeded. Issuer may cancel to release collateral.")
+
         url_1 = evidence_url_1.strip()
         url_2 = evidence_url_2.strip()
-        
+
         if url_1 == url_2:
             raise gl.vm.UserError("Evidence sources must be two distinct URLs.")
 
-        # Architectural Upgrade 3: Verify genuinely independent and authoritative sources
+        # Verify genuinely independent and authoritative sources
         domain1 = urlparse(url_1).netloc.lower().replace("www.", "")
         domain2 = urlparse(url_2).netloc.lower().replace("www.", "")
 
         if domain1 == domain2:
             raise gl.vm.UserError("Evidence must come from independent domains.")
-        
+
         if domain1 not in TRUSTED_DOMAINS or domain2 not in TRUSTED_DOMAINS:
             raise gl.vm.UserError(f"Evidence URLs must be from authoritative trusted domains (e.g., {', '.join(list(TRUSTED_DOMAINS)[:3])})")
 
@@ -89,8 +110,11 @@ class SlashGuard(gl.Contract):
         loss_threshold = int(policy["min_loss_usd"])
 
         def evaluate_exploit() -> str:
-            raw_report_1 = gl.nondet.web.render(url_1, mode='html')
-            raw_report_2 = gl.nondet.web.render(url_2, mode='html')
+            try:
+                raw_report_1 = gl.nondet.web.render(url_1, mode='html')
+                raw_report_2 = gl.nondet.web.render(url_2, mode='html')
+            except Exception:
+                return "REJECTED"
 
             clean_report_1 = str(raw_report_1)[:4000]
             clean_report_2 = str(raw_report_2)[:4000]
@@ -119,16 +143,24 @@ class SlashGuard(gl.Contract):
 
         consensus_verdict = gl.eq_principle.strict_eq(evaluate_exploit)
 
+        # Increment claim attempts regardless of outcome
+        policy["claim_attempts"] = attempts + 1
+
         if consensus_verdict == "CONFIRMED":
             policyholder = str(policy["policyholder"])
             payout = int(policy["coverage_amount"])
-            
+
             current_approved = int(self.approved_payouts.get(policyholder, u256(0)))
             self.approved_payouts[policyholder] = u256(current_approved + payout)
-            
+
             policy["is_active"] = False
             policy["claim_status"] = "CONFIRMED"
             self.policies[policy_id] = json.dumps(policy)
+
+            # FIX 5: Decrement total_underwritten on confirmation
+            current_total = int(self.total_underwritten)
+            self.total_underwritten = u256(current_total - payout)
+
             return "CLAIM_CONFIRMED_AND_ESCROWED"
         else:
             policy["claim_status"] = "REJECTED"
@@ -137,52 +169,52 @@ class SlashGuard(gl.Contract):
 
     @gl.public.write
     def withdraw_payout(self) -> int:
-        # Architectural Upgrade 2: Settles real escrowed value natively
         caller = gl.message.sender_address
-        caller_hex = caller.as_hex
-        
+        # FIX 6: Normalize caller address to lowercase for consistent lookup
+        caller_hex = caller.as_hex.lower()
+
         current_amount = self.approved_payouts.get(caller_hex, u256(0))
         if current_amount <= u256(0):
             raise gl.vm.UserError("No approved payouts available.")
-            
+
         if current_amount > self.balance:
             raise gl.vm.UserError("Insufficient contract balance to cover payout.")
 
         # Clear the approved balance before transferring (prevent re-entrancy)
         self.approved_payouts[caller_hex] = u256(0)
-        
+
         # Settle the payout by transferring GenLayer native tokens
         gl.get_contract_at(caller).emit_transfer(value=current_amount, on="finalized")
-        
+
         return int(current_amount)
-        
+
     @gl.public.write
     def cancel_policy(self, policy_id: str) -> int:
         if gl.message.sender_address.as_hex != self.issuer:
             raise gl.vm.UserError("Unauthorized: Only the designated issuer/underwriter can cancel policies.")
-        
+
         raw_policy = self.policies.get(policy_id, "")
         if not raw_policy:
             raise gl.vm.UserError("Policy does not exist.")
-        
+
         policy = json.loads(raw_policy)
         if not policy.get("is_active", False):
             raise gl.vm.UserError("Policy is no longer active.")
-            
+
         if policy.get("claim_status") not in ("NONE", "REJECTED"):
             raise gl.vm.UserError("Cannot cancel a policy with a confirmed or pending claim.")
-        
+
         coverage_amount = int(policy["coverage_amount"])
-        
+
         policy["is_active"] = False
         policy["claim_status"] = "CANCELLED"
         self.policies[policy_id] = json.dumps(policy)
-        
+
         current_total = int(self.total_underwritten)
         self.total_underwritten = u256(current_total - coverage_amount)
-        
+
         gl.get_contract_at(gl.message.sender_address).emit_transfer(value=u256(coverage_amount), on="finalized")
-        
+
         return coverage_amount
 
     @gl.public.view
@@ -195,4 +227,4 @@ class SlashGuard(gl.Contract):
 
     @gl.public.view
     def check_approved_payout(self, user: str) -> int:
-        return int(self.approved_payouts.get(user, u256(0)))
+        return int(self.approved_payouts.get(user.lower(), u256(0)))
