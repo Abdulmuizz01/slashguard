@@ -169,8 +169,8 @@ class SlashGuard(gl.Contract):
         if not policy.get("is_active", False):
             raise gl.vm.UserError("Policy is no longer active.")
             
-        if policy.get("claim_status") != "NONE":
-            raise gl.vm.UserError("Cannot cancel a policy that has a claim processing or processed.")
+        if policy.get("claim_status") not in ("NONE", "REJECTED"):
+            raise gl.vm.UserError("Cannot cancel a policy with a confirmed or pending claim.")
         
         coverage_amount = int(policy["coverage_amount"])
         
