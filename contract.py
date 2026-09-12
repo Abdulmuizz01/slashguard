@@ -60,6 +60,8 @@ class SlashGuard(gl.Contract):
         normalized_beneficiary = beneficiary.strip().lower()
         if not normalized_beneficiary:
             raise gl.vm.UserError("Beneficiary address cannot be empty.")
+        if not re.match(r'^0x[a-f0-9]{40}$', normalized_beneficiary):
+            raise gl.vm.UserError("Invalid beneficiary address format.")
 
         policy_data = {
             "policyholder": normalized_beneficiary,
@@ -84,6 +86,9 @@ class SlashGuard(gl.Contract):
         policy = json.loads(raw_policy)
         if not policy.get("is_active", False):
             raise gl.vm.UserError("Policy is no longer active or already settled.")
+
+        if gl.message.sender_address.as_hex.lower() != policy["policyholder"]:
+            raise gl.vm.UserError("Only the beneficiary can submit a claim.")
 
         # FIX 4: Enforce maximum claim attempts to prevent infinite replay attacks
         attempts = int(policy.get("claim_attempts", 0))
@@ -189,6 +194,19 @@ class SlashGuard(gl.Contract):
         return int(current_amount)
 
     @gl.public.write
+    def approve_cancellation(self, policy_id: str) -> None:
+        raw_policy = self.policies.get(policy_id, "")
+        if not raw_policy:
+            raise gl.vm.UserError("Policy does not exist.")
+        
+        policy = json.loads(raw_policy)
+        if gl.message.sender_address.as_hex.lower() != policy["policyholder"]:
+            raise gl.vm.UserError("Only the beneficiary can approve cancellation.")
+            
+        policy["cancellation_approved"] = True
+        self.policies[policy_id] = json.dumps(policy)
+
+    @gl.public.write
     def cancel_policy(self, policy_id: str) -> int:
         if gl.message.sender_address.as_hex != self.issuer:
             raise gl.vm.UserError("Unauthorized: Only the designated issuer/underwriter can cancel policies.")
@@ -203,6 +221,10 @@ class SlashGuard(gl.Contract):
 
         if policy.get("claim_status") not in ("NONE", "REJECTED"):
             raise gl.vm.UserError("Cannot cancel a policy with a confirmed or pending claim.")
+            
+        attempts = int(policy.get("claim_attempts", 0))
+        if not (policy.get("cancellation_approved") == True or attempts >= MAX_CLAIM_ATTEMPTS):
+            raise gl.vm.UserError("Cancellation requires beneficiary approval or exhausted claim attempts.")
 
         coverage_amount = int(policy["coverage_amount"])
 
