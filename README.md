@@ -130,30 +130,29 @@ Evidence URLs are parsed strictly using `urllib.parse`:
 A comprehensive 15-test test suite is provided in `test_slashguard.py`. It tests strict equivalence consensus, validator disagreement, web-fetch failures, duplicate withdrawal guards, and all policy lifecycle states:
 
 ```bash
-python test_slashguard.py
+python -m unittest -v test_slashguard.py
 ```
 
 Expected output:
 ```text
-======================================================================
-Running SlashGuard Full Invariant & Consensus Test Suite
-======================================================================
-[PASS] Test 1: Policy creation and accounting
-[PASS] Test 2: Underpayment and overpayment lock prevention
-[PASS] Test 3: Strict canonical beneficiary address validation
-[PASS] Test 4: Strict URL validation (HTTPS, no credentials, domain aliasing)
-[PASS] Test 5: Third-party griefing blocked (beneficiary only)
-[PASS] Test 6: Consensus CONFIRMED claim updates state and decrements total_underwritten
-[PASS] Test 7: Validator consensus disagreement fails strict equivalence
-[PASS] Test 8: Web fetch failure gracefully handled as REJECTED verdict
-[PASS] Test 9: Successful withdrawal and duplicate withdrawal prevention
-[PASS] Test 10: Insufficient contract balance guard
-[PASS] Test 11: Unilateral issuer cancellation blocked (coverage preserved)
-[PASS] Test 12: Mutual consent cancellation releases 100% collateral to issuer
-[PASS] Test 13: Cancellation after 3 rejected attempts frees locked collateral
-[PASS] Test 14: Confirmed policy cannot be cancelled (mutual exclusivity)
-[PASS] Test 15: Policy pending cancellation cannot be claimed
-======================================================================
-All 15 Automated Unit Tests Passed Successfully (Exit Code 0)
-======================================================================
+test_10_insufficient_contract_balance_reverts (test_slashguard.TestSlashGuard.test_10_insufficient_contract_balance_reverts) ... ok
+test_11_unilateral_issuer_cancellation_blocked (test_slashguard.TestSlashGuard.test_11_unilateral_issuer_cancellation_blocked) ... ok
+test_12_mutual_consent_cancellation_and_refund (test_slashguard.TestSlashGuard.test_12_mutual_consent_cancellation_and_refund) ... ok
+test_13_cancellation_after_three_rejected_attempts (test_slashguard.TestSlashGuard.test_13_cancellation_after_three_rejected_attempts) ... ok
+test_14_cannot_cancel_confirmed_policy_and_cannot_payout_cancelled (test_slashguard.TestSlashGuard.test_14_cannot_cancel_confirmed_policy_and_cannot_payout_cancelled) ... ok
+test_15_cannot_claim_policy_pending_cancellation (test_slashguard.TestSlashGuard.test_15_cannot_claim_policy_pending_cancellation) ... ok
+test_1_create_policy_success_and_accounting (test_slashguard.TestSlashGuard.test_1_create_policy_success_and_accounting) ... ok
+test_2_create_policy_underfunded_and_overpayment_rejected (test_slashguard.TestSlashGuard.test_2_create_policy_underfunded_and_overpayment_rejected) ... ok
+test_3_create_policy_invalid_beneficiary_rejected (test_slashguard.TestSlashGuard.test_3_create_policy_invalid_beneficiary_rejected) ... ok
+test_4_evidence_url_strict_validation (test_slashguard.TestSlashGuard.test_4_evidence_url_strict_validation) ... ok
+test_5_submit_claim_restricted_to_beneficiary (test_slashguard.TestSlashGuard.test_5_submit_claim_restricted_to_beneficiary) ... ok
+test_6_consensus_confirmed_claim_and_payout_ledger (test_slashguard.TestSlashGuard.test_6_consensus_confirmed_claim_and_payout_ledger) ... ok
+test_7_consensus_disagreement_failure (test_slashguard.TestSlashGuard.test_7_consensus_disagreement_failure) ... ok
+test_8_web_render_failure_gracefully_handled (test_slashguard.TestSlashGuard.test_8_web_render_failure_gracefully_handled) ... ok
+test_9_successful_withdrawal_and_reentrancy_prevention (test_slashguard.TestSlashGuard.test_9_successful_withdrawal_and_reentrancy_prevention) ... ok
+
+----------------------------------------------------------------------
+Ran 15 tests in 0.002s
+
+OK
 ```
