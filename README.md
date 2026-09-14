@@ -122,6 +122,7 @@ Evidence URLs are parsed strictly using `urllib.parse`:
    * Unilateral cancellation while coverage is active will revert.
    * Beneficiary can call `approve_cancellation("POL-AAVE-001")`, allowing the issuer to invoke `cancel_policy` and reclaim collateral.
    * Alternatively, if 3 claim attempts are rejected, the issuer can call `cancel_policy` to prevent trapped funds.
+<<<<<<< HEAD
 
 ---
 
@@ -156,3 +157,5 @@ Ran 15 tests in 0.003s
 
 OK
 ```
+=======
+>>>>>>> 8c561bf9d36e150cb1a6b5b858fca4190b4731b8
