@@ -135,24 +135,24 @@ python -m unittest -v test_slashguard.py
 
 Expected output:
 ```text
+test_01_create_policy_success_and_accounting (test_slashguard.TestSlashGuard.test_01_create_policy_success_and_accounting) ... ok
+test_02_create_policy_underfunded_and_overpayment_rejected (test_slashguard.TestSlashGuard.test_02_create_policy_underfunded_and_overpayment_rejected) ... ok
+test_03_create_policy_invalid_beneficiary_rejected (test_slashguard.TestSlashGuard.test_03_create_policy_invalid_beneficiary_rejected) ... ok
+test_04_evidence_url_strict_validation (test_slashguard.TestSlashGuard.test_04_evidence_url_strict_validation) ... ok
+test_05_submit_claim_restricted_to_beneficiary (test_slashguard.TestSlashGuard.test_05_submit_claim_restricted_to_beneficiary) ... ok
+test_06_consensus_confirmed_claim_and_payout_ledger (test_slashguard.TestSlashGuard.test_06_consensus_confirmed_claim_and_payout_ledger) ... ok
+test_07_consensus_disagreement_failure (test_slashguard.TestSlashGuard.test_07_consensus_disagreement_failure) ... ok
+test_08_web_render_failure_gracefully_handled (test_slashguard.TestSlashGuard.test_08_web_render_failure_gracefully_handled) ... ok
+test_09_successful_withdrawal_and_reentrancy_prevention (test_slashguard.TestSlashGuard.test_09_successful_withdrawal_and_reentrancy_prevention) ... ok
 test_10_insufficient_contract_balance_reverts (test_slashguard.TestSlashGuard.test_10_insufficient_contract_balance_reverts) ... ok
 test_11_unilateral_issuer_cancellation_blocked (test_slashguard.TestSlashGuard.test_11_unilateral_issuer_cancellation_blocked) ... ok
 test_12_mutual_consent_cancellation_and_refund (test_slashguard.TestSlashGuard.test_12_mutual_consent_cancellation_and_refund) ... ok
 test_13_cancellation_after_three_rejected_attempts (test_slashguard.TestSlashGuard.test_13_cancellation_after_three_rejected_attempts) ... ok
 test_14_cannot_cancel_confirmed_policy_and_cannot_payout_cancelled (test_slashguard.TestSlashGuard.test_14_cannot_cancel_confirmed_policy_and_cannot_payout_cancelled) ... ok
 test_15_cannot_claim_policy_pending_cancellation (test_slashguard.TestSlashGuard.test_15_cannot_claim_policy_pending_cancellation) ... ok
-test_1_create_policy_success_and_accounting (test_slashguard.TestSlashGuard.test_1_create_policy_success_and_accounting) ... ok
-test_2_create_policy_underfunded_and_overpayment_rejected (test_slashguard.TestSlashGuard.test_2_create_policy_underfunded_and_overpayment_rejected) ... ok
-test_3_create_policy_invalid_beneficiary_rejected (test_slashguard.TestSlashGuard.test_3_create_policy_invalid_beneficiary_rejected) ... ok
-test_4_evidence_url_strict_validation (test_slashguard.TestSlashGuard.test_4_evidence_url_strict_validation) ... ok
-test_5_submit_claim_restricted_to_beneficiary (test_slashguard.TestSlashGuard.test_5_submit_claim_restricted_to_beneficiary) ... ok
-test_6_consensus_confirmed_claim_and_payout_ledger (test_slashguard.TestSlashGuard.test_6_consensus_confirmed_claim_and_payout_ledger) ... ok
-test_7_consensus_disagreement_failure (test_slashguard.TestSlashGuard.test_7_consensus_disagreement_failure) ... ok
-test_8_web_render_failure_gracefully_handled (test_slashguard.TestSlashGuard.test_8_web_render_failure_gracefully_handled) ... ok
-test_9_successful_withdrawal_and_reentrancy_prevention (test_slashguard.TestSlashGuard.test_9_successful_withdrawal_and_reentrancy_prevention) ... ok
 
 ----------------------------------------------------------------------
-Ran 15 tests in 0.002s
+Ran 15 tests in 0.003s
 
 OK
 ```

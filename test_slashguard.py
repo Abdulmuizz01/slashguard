@@ -140,7 +140,7 @@ class TestSlashGuard(unittest.TestCase):
         self.c.approved_payouts = {}
         self.c.balance = MockU256(500000)
 
-    def test_1_create_policy_success_and_accounting(self):
+    def test_01_create_policy_success_and_accounting(self):
         mock_gl.message = MockMessage(ISSUER, value=100000)
         self.c.create_policy("POL-1", BENEFICIARY, "Aave V3", 500000, 100000)
         
@@ -151,7 +151,7 @@ class TestSlashGuard(unittest.TestCase):
         self.assertEqual(policy["claim_status"], "NONE")
         self.assertEqual(int(self.c.total_underwritten), 100000)
 
-    def test_2_create_policy_underfunded_and_overpayment_rejected(self):
+    def test_02_create_policy_underfunded_and_overpayment_rejected(self):
         mock_gl.message = MockMessage(ISSUER, value=50000) # Underpaid
         with self.assertRaises(MockUserError) as cm:
             self.c.create_policy("POL-1", BENEFICIARY, "Aave V3", 500000, 100000)
@@ -162,7 +162,7 @@ class TestSlashGuard(unittest.TestCase):
             self.c.create_policy("POL-1", BENEFICIARY, "Aave V3", 500000, 100000)
         self.assertIn("Deposit must exactly match", str(cm.exception))
 
-    def test_3_create_policy_invalid_beneficiary_rejected(self):
+    def test_03_create_policy_invalid_beneficiary_rejected(self):
         mock_gl.message = MockMessage(ISSUER, value=100000)
         
         with self.assertRaises(MockUserError):
@@ -177,7 +177,7 @@ class TestSlashGuard(unittest.TestCase):
         with self.assertRaises(MockUserError):
             self.c.create_policy("POL-1", ISSUER, "Aave V3", 500000, 100000)
 
-    def test_4_evidence_url_strict_validation(self):
+    def test_04_evidence_url_strict_validation(self):
         mock_gl.message = MockMessage(ISSUER, value=100000)
         self.c.create_policy("POL-1", BENEFICIARY, "Aave V3", 500000, 100000)
         mock_gl.message = MockMessage(BENEFICIARY)
@@ -201,7 +201,7 @@ class TestSlashGuard(unittest.TestCase):
             self.c.submit_claim("POL-1", "https://twitter.com/alert/1", "https://x.com/alert/2")
         self.assertIn("independent domains", str(cm.exception))
 
-    def test_5_submit_claim_restricted_to_beneficiary(self):
+    def test_05_submit_claim_restricted_to_beneficiary(self):
         mock_gl.message = MockMessage(ISSUER, value=100000)
         self.c.create_policy("POL-1", BENEFICIARY, "Aave V3", 500000, 100000)
         
@@ -210,7 +210,7 @@ class TestSlashGuard(unittest.TestCase):
             self.c.submit_claim("POL-1", "https://rekt.news/1", "https://peckshield.com/1")
         self.assertIn("Only the beneficiary", str(cm.exception))
 
-    def test_6_consensus_confirmed_claim_and_payout_ledger(self):
+    def test_06_consensus_confirmed_claim_and_payout_ledger(self):
         mock_gl.message = MockMessage(ISSUER, value=100000)
         self.c.create_policy("POL-1", BENEFICIARY, "Aave V3", 500000, 100000)
         
@@ -224,7 +224,7 @@ class TestSlashGuard(unittest.TestCase):
         self.assertEqual(self.c.check_approved_payout(BENEFICIARY), 100000)
         self.assertEqual(int(self.c.total_underwritten), 0)
 
-    def test_7_consensus_disagreement_failure(self):
+    def test_07_consensus_disagreement_failure(self):
         mock_gl.message = MockMessage(ISSUER, value=100000)
         self.c.create_policy("POL-1", BENEFICIARY, "Aave V3", 500000, 100000)
         
@@ -234,7 +234,7 @@ class TestSlashGuard(unittest.TestCase):
             self.c.submit_claim("POL-1", "https://rekt.news/aave", "https://peckshield.com/alert")
         self.assertIn("strict equivalence", str(cm.exception))
 
-    def test_8_web_render_failure_gracefully_handled(self):
+    def test_08_web_render_failure_gracefully_handled(self):
         mock_gl.message = MockMessage(ISSUER, value=100000)
         self.c.create_policy("POL-1", BENEFICIARY, "Aave V3", 500000, 100000)
         
@@ -248,7 +248,7 @@ class TestSlashGuard(unittest.TestCase):
         self.assertEqual(policy["claim_status"], "REJECTED")
         self.assertTrue(policy["is_active"])
 
-    def test_9_successful_withdrawal_and_reentrancy_prevention(self):
+    def test_09_successful_withdrawal_and_reentrancy_prevention(self):
         mock_gl.message = MockMessage(ISSUER, value=100000)
         self.c.create_policy("POL-1", BENEFICIARY, "Aave V3", 500000, 100000)
         
