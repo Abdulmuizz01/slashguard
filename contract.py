@@ -49,6 +49,8 @@ class SlashGuard(gl.Contract):
     def create_policy(self, policy_id: str, beneficiary: str, target_vault: str, min_loss_usd: int, coverage_amount: int) -> None:
         if gl.message.sender_address.as_hex.lower() != self.issuer:
             raise gl.vm.UserError("Unauthorized: Only the designated issuer/underwriter can create policies.")
+        if not policy_id or not policy_id.strip():
+            raise gl.vm.UserError("Policy ID cannot be empty.")
         if policy_id in self.policies:
             raise gl.vm.UserError("Policy ID already exists.")
         if coverage_amount <= 0 or min_loss_usd <= 0:
