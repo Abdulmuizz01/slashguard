@@ -42,8 +42,9 @@ Traditional EVM smart contracts are isolated from off-chain data—they cannot r
   │  • Beneficiary-only claim submission (stops 3rd-party griefing)         │
   │  • Attempt limit: max 3 attempts per policy                            │
   │  • Mutual cancellation: approve_cancellation() or exhausted attempts   │
+  │  • Strict URL parsing: HTTPS only, no credentials, no custom ports     │
   │  • Trusted domain whitelist + canonical alias mapping (e.g. x.com)     │
-  │  • Independent source check (domain1 != domain2)                       │
+  │  • Independent source check (host1 != host2)                           │
   └───────────────────────────────────┬────────────────────────────────────┘
                                       │
                                       ▼
@@ -85,14 +86,21 @@ The beneficiary is explicitly decoupled from the issuer. Beneficiary addresses a
 * **Beneficiary-Only Claims:** `submit_claim` enforces that `gl.message.sender_address` equals the stored `policyholder`. External third parties cannot call the contract to waste claim attempts.
 * **Mutual Consent Cancellation:** The issuer **cannot** arbitrarily cancel an active policy to rug-pull coverage. Cancellation requires either explicit beneficiary consent (`approve_cancellation`) or exhaustion of all 3 claim attempts.
 
-### D. Trusted Domain Whitelist, Canonical Aliasing & Independence Check
-Before validators spend gas on LLM consensus, evidence URLs are checked at the Python level. URLs must match authoritative security domains (`rekt.news`, `etherscan.io`, `peckshield.com`, `certik.com`, `halborn.com`, `blocksec.com`, `x.com`, `twitter.com`). Canonical aliases (`twitter.com` -> `x.com`) prevent cross-submitting the same source under different hostnames.
+### D. Strict URL Parsing, Domain Whitelist & Canonical Aliasing
+Evidence URLs are parsed strictly using `urllib.parse`:
+- Must strictly use the `https` scheme.
+- Embedded credentials (`user:pass@host`) and non-standard ports are rejected.
+- Validates the parsed `hostname` (not raw `netloc`) against `TRUSTED_DOMAINS` (`rekt.news`, `etherscan.io`, `peckshield.com`, `certik.com`, `halborn.com`, `blocksec.com`, `x.com`, `twitter.com`).
+- Canonical domain aliases (`twitter.com` -> `x.com`) prevent cross-submitting the same source under different hostnames.
 
-### E. Equivalence Principle & Prompt Injection Hardening
-Web rendering and LLM evaluations run inside an isolated nondet closure. Evidence is wrapped in XML tags with clear instructions directing the LLM to ignore injected overrides. Consensus is enforced via `gl.eq_principle.strict_eq()`, requiring unanimous agreement on `{"status": "CONFIRMED"}` or `{"status": "REJECTED"}`.
+### E. GenVM Runtime State & Balance Semantics
+- **State Storage:** GenVM automatically instantiates persistent storage proxies for class-annotated `TreeMap` instances (`policies` and `approved_payouts`). Explicit manual reassignment in `__init__` (e.g. `self.policies = TreeMap()`) is strictly avoided as it overwrites GenVM's internal storage proxy and causes deployment failure.
+- **Balance Property:** `self.balance` is a built-in GenVM contract property representing the contract's native token balance, utilized to verify solvency prior to dispatching transfers.
 
-### F. Pull-Over-Push Native Settlement
-Payouts are logged to `approved_payouts`. When the beneficiary calls `withdraw_payout`, the state balance is cleared **before** `emit_transfer` executes, preventing re-entrancy attacks.
+### F. Trust Model & Fallback Behavior
+- **Authority Whitelist:** The contract trusts established forensic audit firms and block explorers. Validators do not accept random blogs or social media mirrors.
+- **Graceful Error Fallbacks:** If a source website is temporarily unreachable or throws a 404/500 during `gl.nondet.web.render`, or if an LLM response is unparseable, the validator execution safely catches the exception and returns `"REJECTED"` rather than causing an unhandled runtime error.
+- **Consensus Failure vs. Rejection:** If validators disagree on an ambiguous report (some return `CONFIRMED` while others return `REJECTED`), `gl.eq_principle.strict_eq()` does not reach consensus and the transaction reverts, preserving state without consuming claim attempts. A claim attempt is consumed only when validators unanimously agree on a `REJECTED` verdict.
 
 ---
 
@@ -106,7 +114,7 @@ Payouts are logged to `approved_payouts`. When the beneficiary calls `withdraw_p
    * `min_loss_usd`: `500000`
    * `coverage_amount`: `100000`
 3. **Test Claim Submission** (as Beneficiary):
-   * Call `submit_claim` using two distinct trusted domain URLs (e.g. `rekt.news` and `peckshield.com`).
+   * Call `submit_claim` using two distinct trusted domain URLs (e.g. `https://rekt.news/aave-v3-incident` and `https://peckshield.com/alerts/aave-v3`).
    * Calls from non-beneficiary addresses will revert with `UserError`.
 4. **Test Payout Withdrawal** (as Beneficiary, upon `CONFIRMED` consensus):
    * Call `withdraw_payout()` to receive native tokens.
@@ -117,4 +125,35 @@ Payouts are logged to `approved_payouts`. When the beneficiary calls `withdraw_p
 
 ---
 
+## 5. Automated Unit Tests
 
+A comprehensive 15-test test suite is provided in `test_slashguard.py`. It tests strict equivalence consensus, validator disagreement, web-fetch failures, duplicate withdrawal guards, and all policy lifecycle states:
+
+```bash
+python test_slashguard.py
+```
+
+Expected output:
+```text
+======================================================================
+Running SlashGuard Full Invariant & Consensus Test Suite
+======================================================================
+[PASS] Test 1: Policy creation and accounting
+[PASS] Test 2: Underpayment and overpayment lock prevention
+[PASS] Test 3: Strict canonical beneficiary address validation
+[PASS] Test 4: Strict URL validation (HTTPS, no credentials, domain aliasing)
+[PASS] Test 5: Third-party griefing blocked (beneficiary only)
+[PASS] Test 6: Consensus CONFIRMED claim updates state and decrements total_underwritten
+[PASS] Test 7: Validator consensus disagreement fails strict equivalence
+[PASS] Test 8: Web fetch failure gracefully handled as REJECTED verdict
+[PASS] Test 9: Successful withdrawal and duplicate withdrawal prevention
+[PASS] Test 10: Insufficient contract balance guard
+[PASS] Test 11: Unilateral issuer cancellation blocked (coverage preserved)
+[PASS] Test 12: Mutual consent cancellation releases 100% collateral to issuer
+[PASS] Test 13: Cancellation after 3 rejected attempts frees locked collateral
+[PASS] Test 14: Confirmed policy cannot be cancelled (mutual exclusivity)
+[PASS] Test 15: Policy pending cancellation cannot be claimed
+======================================================================
+All 15 Automated Unit Tests Passed Successfully (Exit Code 0)
+======================================================================
+```
