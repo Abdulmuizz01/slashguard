@@ -117,10 +117,4 @@ Payouts are logged to `approved_payouts`. When the beneficiary calls `withdraw_p
 
 ---
 
-## 5. Automated Unit Tests
 
-Run the local test suite:
-```bash
-python test_slashguard.py
-```
-All 19 test cases validate authorization, regex address validation, griefing resistance, cancellation locks, and accounting balance invariance.
