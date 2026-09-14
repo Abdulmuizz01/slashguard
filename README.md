@@ -12,7 +12,7 @@ Decentralized insurance and parametric risk pools face a critical bottleneck: **
 
 Traditional EVM smart contracts are isolated from off-chain data—they cannot read exploit post-mortems, security disclosures, or block explorer transaction summaries on the open web.
 
-**SlashGuard** is a standalone GenLayer Intelligent Contract that acts as an autonomous forensic claims adjudicator. When a claim is submitted with supporting evidence URLs (e.g., Rekt.news, Etherscan incident transactions, PeckShield alerts), the contract uses GenLayer's **Optimistic Democracy** to fetch the unstructured web data, cross-reference both sources against the policy's natural-language parameters, and reach strict validator consensus before liquidating payouts.
+**SlashGuard** is a standalone GenLayer Intelligent Contract that acts as an autonomous forensic claims adjudicator. When a claim is submitted with supporting evidence URLs (e.g., Rekt.news, Etherscan incident transactions, PeckShield alerts), the contract uses GenLayer's **Optimistic Democracy** to fetch unstructured web data, cross-reference both sources against the policy's natural-language parameters, and reach strict validator consensus before liquidating payouts.
 
 ---
 
@@ -21,106 +21,106 @@ Traditional EVM smart contracts are isolated from off-chain data—they cannot r
 ```
            Issuer/Underwriter                    Insured Beneficiary
                   │                                       │
-  1. create_policy(id, beneficiary,              4. withdraw_payout()
-     vault, threshold, amount)                            │
-     + deposits coverage tokens                           │
+  1. create_policy(id, beneficiary,              2. submit_claim(id, url_1, url_2)
+     vault, threshold, amount)                   [Only beneficiary can submit]
+     + deposits exact coverage tokens                     │
                   │                                       │
-                  ▼                                       │
-  ┌───────────────────────────────────────────────────────┐
-  │  SlashGuard Intelligent Contract (GenVM)               │
-  │                                                        │
-  │  State:                                                │
-  │  • policies: TreeMap[str, str]         (JSON blobs)    │
-  │  • approved_payouts: TreeMap[str, u256] (beneficiary)  │
-  │  • issuer: str           (authorized underwriter)      │
-  │  • total_underwritten: u256                            │
-  │                                                        │
-  │  Guards:                                               │
-  │  • Issuer-only policy creation (authorization)         │
-  │  • Funded coverage (msg.value >= coverage_amount)      │
-  │  • Trusted domain whitelist (urllib.parse)              │
-  │  • Independent source enforcement (domain1 != domain2) │
-  └───────────────────────┬────────────────────────────────┘
-                          │
-      2. submit_claim(policy_id, url_1, url_2)
-                          │
-          ┌───────────────┴───────────────┐
-          ▼                               ▼
-  ┌─────────────────┐           ┌─────────────────┐
-  │ Validator Node A │           │ Validator Node B │
-  │ • web.render()   │           │ • web.render()   │
-  │ • exec_prompt()  │           │ • exec_prompt()  │
-  │ • CONFIRMED      │           │ • CONFIRMED      │
-  └────────┬─────────┘           └────────┬─────────┘
-           └───────────────┬──────────────┘
-                           ▼
-       gl.eq_principle.strict_eq() Consensus
-                           │
-              ┌────────────┴────────────┐
-              ▼                         ▼
-         CONFIRMED                  REJECTED
-     • Credit beneficiary       • Policy stays active
-     • Deactivate policy        • Issuer can cancel
-     • Beneficiary withdraws      and reclaim deposit
+                  ▼                                       ▼
+  ┌────────────────────────────────────────────────────────────────────────┐
+  │  SlashGuard Intelligent Contract (GenVM)                                │
+  │                                                                        │
+  │  State:                                                                │
+  │  • policies: TreeMap[str, str]         (JSON blobs)                    │
+  │  • approved_payouts: TreeMap[str, u256] (beneficiary payouts ledger)   │
+  │  • issuer: str           (authorized underwriter)                      │
+  │  • total_underwritten: u256                                            │
+  │                                                                        │
+  │  Security Guards:                                                      │
+  │  • Issuer-only policy creation                                         │
+  │  • Strict deposit matching (msg.value == coverage_amount)               │
+  │  • Canonical beneficiary validation (strict ^0x[a-f0-9]{40}$)           │
+  │  • Beneficiary-only claim submission (stops 3rd-party griefing)         │
+  │  • Attempt limit: max 3 attempts per policy                            │
+  │  • Mutual cancellation: approve_cancellation() or exhausted attempts   │
+  │  • Trusted domain whitelist + canonical alias mapping (e.g. x.com)     │
+  │  • Independent source check (domain1 != domain2)                       │
+  └───────────────────────────────────┬────────────────────────────────────┘
+                                      │
+                                      ▼
+                      gl.eq_principle.strict_eq() Consensus
+                                      │
+                         ┌────────────┴────────────┐
+                         ▼                         ▼
+                    CONFIRMED                  REJECTED
+                • Credit beneficiary       • Attempt counter increments
+                • Deactivate policy        • Policy remains active
+                • Beneficiary calls        • Beneficiary can retry (up to 3)
+                  withdraw_payout()          or call approve_cancellation()
 ```
 
-### Collateral Lifecycle
+### Collateral & Policy Lifecycle
 
-Every policy has a clear, safe exit for locked funds:
+Every policy enforces a deterministic lifecycle with zero stranded funds and strong rug-pull protection:
 
-| Policy State | Collateral Path |
-|---|---|
-| Created, no claim | Issuer calls `cancel_policy` → refund |
-| Claim rejected | Issuer calls `cancel_policy` → refund |
-| Claim confirmed | Beneficiary calls `withdraw_payout` → settlement |
-| Already cancelled | No action possible (funds already released) |
+| Policy State | Active? | Allowed Actions | Exit Path |
+|---|---|---|---|
+| **Active (0-2 attempts)** | Yes | Beneficiary calls `submit_claim` or `approve_cancellation` | Coverage active; issuer cannot unilaterally cancel |
+| **Claim Confirmed** | No | Beneficiary calls `withdraw_payout` | Native payout transferred to beneficiary |
+| **Claim Rejected (< 3 attempts)** | Yes | Beneficiary retries `submit_claim` or calls `approve_cancellation` | Coverage preserved for beneficiary |
+| **Cancellation Approved** | Yes | Issuer calls `cancel_policy` | Mutual consent: 100% deposit refunded to issuer |
+| **Attempts Exhausted (>= 3)** | Yes | Issuer calls `cancel_policy` | Deadlock prevented: 100% deposit refunded to issuer |
+| **Cancelled** | No | None | Collateral already returned |
 
 ---
 
 ## 3. Key Technical Features & GenVM Compliance
 
-### A. Issuer Authorization & Funded Coverage
-Only the contract deployer (issuer/underwriter) can create policies. Policy creation is a **payable** function requiring the issuer to deposit the full coverage amount in native tokens, ensuring the pool is always fully collateralized.
+### A. Strict Issuer Authorization & Funded Coverage
+Only the contract deployer (`self.issuer`) can create policies. Policy creation is **payable** and requires exact funding (`gl.message.value == u256(coverage_amount)`). This prevents overpayment traps and guarantees the contract holds 100% of underwritten collateral.
 
-### B. Separate Beneficiary Model
-The issuer designates a separate **beneficiary** address when creating a policy. Confirmed claims pay the beneficiary—not the issuer—making this a true insurance primitive rather than a self-refunding deposit.
+### B. Canonical Beneficiary Validation & Separation
+The beneficiary is explicitly decoupled from the issuer. Beneficiary addresses are strictly validated against `^0x[a-f0-9]{40}$` and normalized to lowercase. Zero-address and issuer-as-beneficiary self-insuring loops are blocked at creation time.
 
-### C. Trusted Domain Whitelist & Independence Check
-Before validators spend gas on LLM consensus, the contract validates evidence URLs at the Python level using `urllib.parse`. Both URLs must originate from different root domains on a hardcoded whitelist of authoritative Web3 security sources (e.g., `rekt.news`, `etherscan.io`, `peckshield.com`).
+### C. Griefing & Rug-Pull Prevention
+* **Beneficiary-Only Claims:** `submit_claim` enforces that `gl.message.sender_address` equals the stored `policyholder`. External third parties cannot call the contract to waste claim attempts.
+* **Mutual Consent Cancellation:** The issuer **cannot** arbitrarily cancel an active policy to rug-pull coverage. Cancellation requires either explicit beneficiary consent (`approve_cancellation`) or exhaustion of all 3 claim attempts.
 
-### D. Strict Non-Deterministic Isolation
-All web access (`gl.nondet.web.render`) and LLM executions (`gl.nondet.exec_prompt`) are encapsulated within an isolated helper function (`evaluate_exploit`) without referencing `self.*` storage. Local variables are captured cleanly before entering the nondet block.
+### D. Trusted Domain Whitelist, Canonical Aliasing & Independence Check
+Before validators spend gas on LLM consensus, evidence URLs are checked at the Python level. URLs must match authoritative security domains (`rekt.news`, `etherscan.io`, `peckshield.com`, `certik.com`, `halborn.com`, `blocksec.com`, `x.com`, `twitter.com`). Canonical aliases (`twitter.com` -> `x.com`) prevent cross-submitting the same source under different hostnames.
 
-### E. Equivalence Principle & Hallucination Defense
-Prompt outputs are sanitized and parsed into strict binary categorical states (`CONFIRMED` vs `REJECTED`). Consensus is enforced via `gl.eq_principle.strict_eq()`, guaranteeing unanimous agreement across validators before state mutation.
+### E. Equivalence Principle & Prompt Injection Hardening
+Web rendering and LLM evaluations run inside an isolated nondet closure. Evidence is wrapped in XML tags with clear instructions directing the LLM to ignore injected overrides. Consensus is enforced via `gl.eq_principle.strict_eq()`, requiring unanimous agreement on `{"status": "CONFIRMED"}` or `{"status": "REJECTED"}`.
 
-### F. Pull-Over-Push Settlement with Re-entrancy Guard
-Approved claims credit the beneficiary's ledger in `approved_payouts`. The `withdraw_payout` function zeros the balance **before** executing `emit_transfer`, preventing re-entrancy attacks.
-
-### G. Safe Cancellation & Refund Path
-The `cancel_policy` function allows the issuer to reclaim locked collateral for policies that were never confirmed—including policies with rejected claims. Cancellation is blocked once a claim is confirmed (funds already allocated to beneficiary).
+### F. Pull-Over-Push Native Settlement
+Payouts are logged to `approved_payouts`. When the beneficiary calls `withdraw_payout`, the state balance is cleared **before** `emit_transfer` executes, preventing re-entrancy attacks.
 
 ---
 
 ## 4. How to Test in GenLayer Studio
 
-1. Open **[GenLayer Studio](https://studio.genlayer.com)** and create a new contract with `contract.py`.
-2. **Deploy** the `SlashGuard` contract with an `initial_pool_name` (e.g., `"SlashGuard Pool"`).
-3. **Create Policy** (set a `value` in the value field to fund the coverage):
+1. Open **[GenLayer Studio](https://studio.genlayer.com)** and deploy `contract.py` with an `initial_pool_name` (e.g., `"SlashGuard Pool"`).
+2. **Create Policy** (as Issuer, attaching exact deposit `value` equal to `coverage_amount`):
    * `policy_id`: `"POL-AAVE-001"`
-   * `beneficiary`: `"0x<beneficiary_address>"`
+   * `beneficiary`: `"0x1111111111111111111111111111111111111111"`
    * `target_vault`: `"Aave V3"`
    * `min_loss_usd`: `500000`
    * `coverage_amount`: `100000`
-4. **Test Valid Claim (Confirmed)**:
-   * Call `submit_claim` with two URLs from different trusted domains reporting an authentic exploit on Aave exceeding $500,000.
-   * Observe validators rotate through `evaluate_exploit` to reach consensus on `"CONFIRMED"`.
-   * Check `check_approved_payout(beneficiary_address)` to see the balance ready for withdrawal.
-5. **Test Invalid Claim (Rejected)**:
-   * Pass unrelated articles or minor non-exploit bug reports.
-   * Observe validators reach consensus on `"REJECTED"`.
-   * The issuer can then call `cancel_policy` to reclaim the locked collateral.
-6. **Withdraw Payout** (as the beneficiary):
-   * Call `withdraw_payout()` to settle the approved balance via native token transfer.
-7. **Cancel Policy** (as the issuer):
-   * Call `cancel_policy("POL-AAVE-001")` to reclaim deposited collateral from an unclaimed or rejected policy.
+3. **Test Claim Submission** (as Beneficiary):
+   * Call `submit_claim` using two distinct trusted domain URLs (e.g. `rekt.news` and `peckshield.com`).
+   * Calls from non-beneficiary addresses will revert with `UserError`.
+4. **Test Payout Withdrawal** (as Beneficiary, upon `CONFIRMED` consensus):
+   * Call `withdraw_payout()` to receive native tokens.
+5. **Test Safe Cancellation** (as Issuer):
+   * Unilateral cancellation while coverage is active will revert.
+   * Beneficiary can call `approve_cancellation("POL-AAVE-001")`, allowing the issuer to invoke `cancel_policy` and reclaim collateral.
+   * Alternatively, if 3 claim attempts are rejected, the issuer can call `cancel_policy` to prevent trapped funds.
+
+---
+
+## 5. Automated Unit Tests
+
+Run the local test suite:
+```bash
+python test_slashguard.py
+```
+All 19 test cases validate authorization, regex address validation, griefing resistance, cancellation locks, and accounting balance invariance.
